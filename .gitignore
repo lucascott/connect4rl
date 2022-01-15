@@ -1,1 +1,6 @@
 .venv/
+build/
+*.egg-info/
+
+# IDE stuff
+.idea/
