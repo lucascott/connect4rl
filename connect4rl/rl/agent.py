@@ -1,3 +1,5 @@
+from collections import deque
+
 import torch
 from torch import nn, optim
 
@@ -21,6 +23,11 @@ class DqnAgent:
     GAMMA = 0.99
     memory = ReplayMemory(10000)
 
+    # Huber loss
+    criterion = nn.SmoothL1Loss()
+
+    loss_vals = deque(maxlen=10)
+
     def __init__(self, rows, cols):
         self.model = DQN(inputs=rows * cols, outputs=cols)
         self.target_model = DQN(inputs=rows * cols, outputs=cols)
@@ -36,6 +43,7 @@ class DqnAgent:
     def optimize(self):
         if len(self.memory) < self.BATCH_SIZE:
             return
+
         transitions = self.memory.sample(self.BATCH_SIZE)
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
@@ -55,8 +63,8 @@ class DqnAgent:
             ]
         )
         state_batch = torch.cat([state.flatten().unsqueeze(0) for state in batch.state])
-        action_batch = torch.cat(batch.action).unsqueeze(0)
-        reward_batch = torch.cat(batch.reward).unsqueeze(0)
+        action_batch = torch.cat(batch.action).unsqueeze(-1)
+        reward_batch = torch.cat(batch.reward)
 
         # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
         # columns of actions taken. These are the actions which would've been taken
@@ -70,14 +78,15 @@ class DqnAgent:
         # state value or 0 in case the state was final.
         next_state_values = torch.zeros(self.BATCH_SIZE)
         next_state_values[non_final_mask] = (
-            self.target_model(non_final_next_states).max(1)[0].detach()
+            self.target_model(non_final_next_states).max(dim=1).values
         )
-        # Compute the expected Q values
-        expected_state_action_values = (next_state_values * self.GAMMA) + reward_batch
 
-        # Compute Huber loss
-        criterion = nn.SmoothL1Loss()
-        loss = criterion(state_action_values, expected_state_action_values)
+        # Compute the expected Q values
+        expected_state_action_values = reward_batch + self.GAMMA * next_state_values
+
+        loss = self.criterion(state_action_values, expected_state_action_values.detach())
+
+        self.loss_vals.append(float(loss))
         # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()

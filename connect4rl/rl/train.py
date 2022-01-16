@@ -1,5 +1,6 @@
 import logging
 import random
+import statistics
 from collections import Counter
 
 import numpy as np
@@ -27,8 +28,8 @@ def process_state(state: np.ndarray):
 
 def run():
     target_update = 5
-    epsilon = 1
-    max_episodes = 1000
+    epsilon = 0.2
+    max_episodes = 10000
     counter = Counter()
     for match in tqdm(range(max_episodes), unit=" matches", ncols=100):
         _logger.debug(f"Match {match}")
@@ -43,7 +44,7 @@ def run():
                 with torch.no_grad():
                     action = agent.predict(torch.flatten(state))
             else:
-                action = torch.tensor(random.randrange(cols), dtype=torch.int)
+                action = torch.tensor(random.randrange(cols), dtype=torch.long)
 
             try:
                 next_state, reward, done, _ = env.step(int(action))
@@ -80,6 +81,9 @@ def run():
         # Update the target network, copying all weights and biases in DQN
         if match % target_update == 0:
             agent.update_target()
+
+        if agent.loss_vals and match % 10 == 0:
+            _logger.info("%.4f", statistics.mean(agent.loss_vals))
         # epsilon -= 0.001
         _logger.debug("----------")
     _logger.info(counter)
