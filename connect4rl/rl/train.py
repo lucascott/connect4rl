@@ -4,26 +4,19 @@ from collections import Counter
 
 import numpy as np
 import torch
-from torch import optim
 from tqdm import tqdm
 
 from connect4rl.exceptions import BoardError
-from connect4rl.rl.agent import DQN
+from connect4rl.rl.agent import DqnAgent
 from connect4rl.rl.env import Connect4Rl
-from connect4rl.rl.replay import ReplayMemory
 
 rows, cols = 6, 7
 env = Connect4Rl(rows, cols)
 
-model = DQN(inputs=rows * cols, outputs=cols)
-target_model = DQN(inputs=rows * cols, outputs=cols)
+agent = DqnAgent(rows, cols)
 
-optimizer = optim.RMSprop(model.parameters())
-memory = ReplayMemory(10000)
 
-BATCH_SIZE = 32
-GAMMA = 0.99
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 _logger = logging.getLogger(__name__)
 
@@ -33,15 +26,11 @@ def process_state(state: np.ndarray):
 
 
 def run():
-
-    target_model.load_state_dict(model.state_dict())
-    target_model.eval()
-
     target_update = 5
-    epsilon = 0
-
+    epsilon = 1
+    max_episodes = 1000
     counter = Counter()
-    for match in tqdm(range(1000), unit=" matches", ncols=100):
+    for match in tqdm(range(max_episodes), unit=" matches", ncols=100):
         _logger.debug(f"Match {match}")
         env.reset()
         state = process_state(env.board.status())
@@ -52,12 +41,12 @@ def run():
             # TODO epsilon greedy
             if rand_sample > epsilon:
                 with torch.no_grad():
-                    action = model(torch.flatten(state)).argmax()
+                    action = agent.predict(torch.flatten(state))
             else:
-                action = torch.tensor(random.randrange(cols), dtype=torch.long)
+                action = torch.tensor(random.randrange(cols), dtype=torch.int)
 
             try:
-                next_state, reward, done, _ = env.step(action.numpy())
+                next_state, reward, done, _ = env.step(int(action))
             except BoardError as err:
                 _logger.debug(err)
                 next_state, reward, done = None, 0, True
@@ -66,15 +55,18 @@ def run():
                 next_state = process_state(next_state)
 
             # Store the transition in memory
-            memory.push(
-                state,
-                action.detach(),
-                next_state,
-                torch.tensor(reward, dtype=torch.long),
+            trans = (
+                torch.unsqueeze(state, dim=0),
+                torch.unsqueeze(action.detach(), dim=0),
+                torch.unsqueeze(state, dim=0),
+                torch.tensor([reward], dtype=torch.int),
             )
+            agent.push(*trans)
 
             # Move to the next state
             state = next_state
+
+            agent.optimize()
 
             if done:
                 env.board.show()
@@ -87,7 +79,8 @@ def run():
 
         # Update the target network, copying all weights and biases in DQN
         if match % target_update == 0:
-            target_model.load_state_dict(model.state_dict())
+            agent.update_target()
+        # epsilon -= 0.001
         _logger.debug("----------")
     _logger.info(counter)
 
