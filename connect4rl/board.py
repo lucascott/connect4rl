@@ -1,5 +1,5 @@
+import logging
 from enum import IntEnum
-from pprint import pprint
 from typing import Tuple
 
 import numpy as np
@@ -7,6 +7,8 @@ import numpy as np
 from connect4rl import exceptions
 
 Position = Tuple[int, int]
+
+_logger = logging.getLogger(__name__)
 
 
 class State(IntEnum):
@@ -16,7 +18,7 @@ class State(IntEnum):
 
 
 class Board:
-    def __init__(self, rows: int = 6, columns: int = 7):
+    def __init__(self, rows: int = 6, columns: int = 7) -> None:
         self._grid = np.full((rows, columns), fill_value=State.empty)
         self._win_seq_length = 4
 
@@ -28,17 +30,18 @@ class Board:
     def columns(self) -> int:
         return self._grid.shape[1]
 
-    def player1_move(self, column):
-        player = State.player1
-        position = self._play_move(player, column)
-        return self.check_victory(position, player)
+    def player1_move(self, column: int) -> bool:
+        return self._play_turn(State.player1, column)
 
-    def player2_move(self, column):
-        player = State.player2
-        position = self._play_move(player, column)
-        return self.check_victory(position, player)
+    def player2_move(self, column: int) -> bool:
+        return self._play_turn(State.player2, column)
 
-    def _play_move(self, player: State, column) -> Position:
+    def _play_turn(self, player: State, column: int) -> bool:
+        position = self._play_move(player=player, column=column)
+        has_won = self.check_victory(player=player, position=position)
+        return has_won
+
+    def _play_move(self, player: State, column: int) -> Position:
         if not (0 <= column < self.columns):
             raise exceptions.BoardError(f"Column {column} is not valid")
         empty_slots: np.ndarray = np.nonzero(self._grid[:, column] == 0)[0]
@@ -48,7 +51,7 @@ class Board:
         self._grid[first_empty_idx, column] = player
         return first_empty_idx, column
 
-    def check_victory(self, position: Position, player: State) -> bool:
+    def check_victory(self, player: State, position: Position) -> bool:
         horizontal = (
             1
             + self._count_coin(position, player, (0, 1))
@@ -96,5 +99,8 @@ class Board:
             return 1 + self._count_coin((row, col), player, traslation)
         return 0
 
-    def display(self):
-        pprint(self._grid[::-1, :])
+    def status(self) -> np.ndarray:
+        return self._grid[::-1, :]
+
+    def show(self) -> None:
+        _logger.debug("\n" + str(self.status()))
