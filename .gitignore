@@ -1,6 +1,7 @@
 .venv/
 build/
 *.egg-info/
+**/__pycache__/
 
 # IDE stuff
 .idea/
